@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ComfyUI P40/M40 Compatibility Fork
 # Base: PyTorch 2.0.1 + CUDA 11.8 + cuDNN 8.7
 #
@@ -34,14 +35,16 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 \
  && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 # Upgrade pip
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel
 
 # ---------------------------------------------------------------------------
 # PyTorch 2.0.1 + CUDA 11.8
 # This is the newest PyTorch that supports Pascal (sm_61) and Maxwell (sm_52)
 # under CUDA 11.8 with full FP16 compute support.
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
     torch==2.0.1+cu118 \
     torchvision==0.15.2+cu118 \
     torchaudio==2.0.2+cu118 \
@@ -50,7 +53,8 @@ RUN pip install --no-cache-dir \
 # ---------------------------------------------------------------------------
 # Core ComfyUI dependencies (pinned for reproducibility)
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
     accelerate==0.21.0 \
     aiohttp==3.9.3 \
     alembic==1.14.0 \
@@ -86,7 +90,8 @@ RUN pip install --no-cache-dir \
 # diffusers — pinned to last version that works with PyTorch 2.0.1
 # (newer diffusers assume BF16 + torch.compile which breaks on P40/M40)
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
     diffusers==0.25.1 \
     invisible-watermark==0.2.0 \
     open-clip-torch==2.24.0
@@ -94,7 +99,8 @@ RUN pip install --no-cache-dir \
 # ---------------------------------------------------------------------------
 # Image processing
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
     opencv-python-headless==4.9.0.80 \
     imageio==2.33.1 \
     imageio-ffmpeg==0.4.9
@@ -102,7 +108,8 @@ RUN pip install --no-cache-dir \
 # ---------------------------------------------------------------------------
 # Optional: bitsandbytes for INT8 quantization (partial sm_61 support)
 # ---------------------------------------------------------------------------
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
     bitsandbytes==0.41.3 \
     || echo "bitsandbytes install failed — INT8 quantization unavailable"
 
