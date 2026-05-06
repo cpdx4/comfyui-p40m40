@@ -37,7 +37,7 @@ A maintainable fork of [ComfyUI](https://github.com/comfyanonymous/ComfyUI) that
 ## Quick Start (Docker — recommended)
 
 ```bash
-git clone https://github.com/YOUR_ORG/comfyui-p40m40.git
+git clone https://github.com/cpdx4/comfyui-p40m40.git
 cd comfyui-p40m40
 
 # First time: build image
@@ -53,7 +53,7 @@ open http://localhost:8188
 ## Quick Start (bare-metal)
 
 ```bash
-git clone --recurse-submodules https://github.com/YOUR_ORG/comfyui-p40m40.git
+git clone --recurse-submodules https://github.com/cpdx4/comfyui-p40m40.git
 cd comfyui-p40m40
 
 # Create venv
