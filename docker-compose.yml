@@ -42,6 +42,7 @@ services:
       # Live-reload compat layer during development
       - ./compat:/app/compat
       - ./patches:/app/patches
+      - ./scripts:/app/scripts
       - ./main_compat.py:/app/main_compat.py
 
     environment:

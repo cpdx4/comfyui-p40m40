@@ -61,6 +61,7 @@ RUN pip install --no-cache-dir \
     PyYAML==6.0.1 \
     safetensors==0.4.2 \
     scipy==1.12.0 \
+    SQLAlchemy==2.0.36 \
     spandrel==0.3.4 \
     tokenizers==0.15.1 \
     tqdm==4.66.1 \
@@ -104,6 +105,7 @@ WORKDIR /app
 # Copy compatibility layer and patches first (rarely changes)
 COPY compat/ /app/compat/
 COPY patches/ /app/patches/
+COPY scripts/ /app/scripts/
 
 # Copy the entry point
 COPY main_compat.py /app/main_compat.py
