@@ -46,6 +46,10 @@ def install(verbose: bool = True) -> None:
     from compat import attention_compat
     attention_compat.register_import_hook()
 
+    # 4. Patch aiohttp so Host: hostname:port headers don't 500 in yarl
+    from compat import aiohttp_compat
+    aiohttp_compat.patch_aiohttp_host()
+
     logger.info("Compatibility layer installed successfully.")
 
 
