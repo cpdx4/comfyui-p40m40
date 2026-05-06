@@ -8,8 +8,10 @@ services:
     image: comfyui-p40m40:latest
     container_name: comfyui-p40m40
 
-    # GPU passthrough — passes ALL available GPUs.
-    # To use only GPU 0:  device_ids: ["0"]
+    # GPU passthrough (compose mode).
+    gpus: all
+
+    # Swarm-mode GPU reservation (ignored by regular docker compose).
     deploy:
       resources:
         reservations:
@@ -22,7 +24,8 @@ services:
       - "8188:8188"
 
     volumes:
-      # ComfyUI source (submodule)
+      # Optional ComfyUI source bind mount.
+      # If this host folder is empty, main_compat.py will bootstrap ComfyUI.
       - ./ComfyUI:/app/ComfyUI
 
       # Persist models across container rebuilds
