@@ -53,19 +53,34 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir \
     accelerate==0.21.0 \
     aiohttp==3.9.3 \
+    alembic==1.14.0 \
+    av==14.2.0 \
+    blake3==1.0.4 \
+    comfyui-embedded-docs==0.4.4 \
+    comfyui-frontend-package==1.43.17 \
+    comfyui-workflow-templates==0.9.69 \
     einops==0.7.0 \
+    filelock==3.16.1 \
     huggingface-hub==0.20.3 \
     kornia==0.7.0 \
+    numpy==1.26.4 \
     Pillow==10.2.0 \
+    pydantic==2.10.6 \
+    pydantic-settings==2.7.1 \
     psutil==5.9.8 \
     PyYAML==6.0.1 \
+    requests==2.32.3 \
     safetensors==0.4.2 \
     scipy==1.12.0 \
+    sentencepiece==0.2.0 \
+    simpleeval==1.0.3 \
     SQLAlchemy==2.0.36 \
     spandrel==0.3.4 \
     tokenizers==0.15.1 \
+    torchsde==0.2.6 \
     tqdm==4.66.1 \
-    transformers==4.37.2
+    transformers==4.37.2 \
+    yarl==1.18.3
 
 # ---------------------------------------------------------------------------
 # diffusers — pinned to last version that works with PyTorch 2.0.1
@@ -105,6 +120,7 @@ WORKDIR /app
 # Copy compatibility layer and patches first (rarely changes)
 COPY compat/ /app/compat/
 COPY patches/ /app/patches/
+COPY comfy_aimdo/ /app/comfy_aimdo/
 COPY scripts/ /app/scripts/
 
 # Copy the entry point

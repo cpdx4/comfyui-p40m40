@@ -31,7 +31,24 @@ def _check_torch() -> Tuple[bool, str, bool]:
         return False, f"PyTorch import failed: {exc}", False
 
     cuda_ok = bool(torch.cuda.is_available())
-    msg = f"PyTorch {torch.__version__} | CUDA build {torch.version.cuda} | cuda_available={cuda_ok}"
+    details = []
+    try:
+        details.append(f"device_count={torch.cuda.device_count()}")
+    except Exception as exc:
+        details.append(f"device_count_error={exc}")
+
+    if not cuda_ok:
+        try:
+            torch.zeros(1, device="cuda")
+        except Exception as exc:
+            details.append(f"cuda_init_error={exc}")
+
+    msg = (
+        f"PyTorch {torch.__version__} | CUDA build {torch.version.cuda} | "
+        f"cuda_available={cuda_ok}"
+    )
+    if details:
+        msg = f"{msg} | {' | '.join(details)}"
     return True, msg, cuda_ok
 
 
