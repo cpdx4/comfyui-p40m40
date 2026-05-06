@@ -31,6 +31,7 @@ A maintainable fork of [ComfyUI](https://github.com/comfyanonymous/ComfyUI) that
 | SDPA fused kernels | Flash/mem-efficient require Ampere | `enable_math=True` only |
 | BF16 compute | No hardware BF16 on Pascal/Maxwell | FP16 used instead |
 | `comfy_kitchen` | Third-party dependency, not open | Stubbed with noop |
+| `comfy_aimdo` | Requires PyTorch 2.8+ (DynamicVRAM) | Stubbed; legacy ModelPatcher used |
 | CUDA 12.x-only kernels | Driver incompatibility | Removed |
 | xformers | Builds require sm_70+ | Replaced with manual attention |
 
@@ -81,8 +82,10 @@ comfyui-p40m40/
 ├── compat/                   ← compatibility layer (injected at runtime)
 │   ├── __init__.py
 │   ├── gpu_compat.py         ← GPU detection & feature-flag registry
-│   ├── torch_compat.py       ← PyTorch version shims (fp8 stubs, compile noop)
+│   ├── torch_compat.py       ← PyTorch version shims (fp8 stubs, compile noop,
+│   │                            RMSNorm backfill for PyTorch 2.0 compat)
 │   ├── attention_compat.py   ← attention mechanism patches
+│   ├── aiohttp_compat.py     ← aiohttp 3.9/yarl host:port URL-build fix
 │   └── fp8_stub.py           ← FP8 dtype + quantization stubs
 ├── patches/                  ← idempotent Python patch scripts
 │   ├── apply_all.py          ← master patch runner
@@ -90,6 +93,17 @@ comfyui-p40m40/
 │   ├── patch_attention.py
 │   ├── patch_ops.py
 │   └── patch_nodes.py
+├── comfy_aimdo/              ← stub package replacing comfy-aimdo
+│   ├── __init__.py           ← disables DynamicVRAM (requires PyTorch 2.8+)
+│   ├── control.py            ← control stub (get_total_vram_usage, analyze, …)
+│   ├── vram_buffer.py        ← VRAMBuffer stub
+│   ├── model_vbar.py         ← ModelVBAR / vbar_* stubs
+│   ├── torch.py              ← aimdo_to_tensor / hostbuf_to_tensor stubs
+│   ├── host_buffer.py        ← HostBuffer stub
+│   └── model_mmap.py         ← ModelMMap stub
+├── comfy_kitchen/            ← stub package replacing comfy-kitchen
+│   ├── __init__.py           ← registry stub (disable, list_backends)
+│   └── tensor.py             ← raises ImportError → fp8 fallback activated
 ├── scripts/
 │   ├── upstream_merge.sh     ← safe upstream merge with conflict guard
 │   ├── setup_fork.sh         ← first-time setup
@@ -127,6 +141,14 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full patch plan and long-term mai
 | IP-Adapter | ✅ | Full support |
 | AnimateDiff | ✅ | Full support |
 | LCM / Lightning | ✅ | Full support |
+
+## ComfyUI-Manager
+
+ComfyUI-Manager is installed and enabled by default. It provides a UI for installing, updating, and managing custom nodes without rebuilding the image.
+
+Access it via the **Manager** button in the ComfyUI toolbar, or navigate to `http://localhost:8188` and click the menu icon.
+
+To disable it, remove `--enable-manager` from the CMD in `Dockerfile` and rebuild.
 
 ## Known Limitations
 

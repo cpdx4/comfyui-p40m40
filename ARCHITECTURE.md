@@ -152,9 +152,31 @@ fall back gracefully.
 compat/
 ├── __init__.py               ← install() entry point called from main_compat.py
 ├── gpu_compat.py             ← GPU detection; exports FEATURE_FLAGS dict
-├── torch_compat.py           ← Stubs for fp8 dtypes, compile noop, sdpa patches
+├── torch_compat.py           ← Stubs for fp8 dtypes, compile noop, sdpa patches,
+│                                 RMSNorm backfill (torch.nn.RMSNorm +
+│                                 torch.nn.functional.rms_norm; added in PyTorch 2.1,
+│                                 missing in 2.0.1)
 ├── attention_compat.py       ← Replaces optimized_attention with safe fallback
+├── aiohttp_compat.py         ← Patches aiohttp.web_request.URL.build() to accept
+│                                 "host:port" Host headers (aiohttp 3.9 / yarl 1.9+ bug)
 └── fp8_stub.py               ← Dummy dtype objects that behave like torch dtypes
+```
+
+### Stub packages
+
+```
+comfy_aimdo/            ← Replaces the comfy-aimdo pip package (requires PyTorch 2.8+).
+├── __init__.py         ← Prints warning; disables DynamicVRAM; legacy ModelPatcher used.
+├── control.py          ← init_device, get_total_vram_usage, analyze, set_log_* stubs.
+├── vram_buffer.py      ← VRAMBuffer(size, device_index) no-op.
+├── model_vbar.py       ← ModelVBAR + vbar_fault/signature_compare/unpin/analyze stubs.
+├── torch.py            ← aimdo_to_tensor / hostbuf_to_tensor no-ops.
+├── host_buffer.py      ← HostBuffer no-op.
+└── model_mmap.py       ← ModelMMap.get() returns 0.
+
+comfy_kitchen/          ← Replaces the comfy-kitchen pip package.
+├── __init__.py         ← registry stub with disable()/list_backends().
+└── tensor.py           ← Raises ImportError → quant_ops.py activates its no-kitchen path.
 ```
 
 ### Execution Order in `main_compat.py`
@@ -164,10 +186,18 @@ compat/
 from compat import install
 install()   # Must happen before any ComfyUI import
 
-# 2. Now safe to import ComfyUI
-import ComfyUI.main as comfyui_main
-comfyui_main.run()
+# 2. Apply source patches if missing (idempotent)
+from patches import apply_all
+apply_all.run_patches("apply")
+
+# 3. Run ComfyUI as __main__ so its startup block executes
+import runpy
+runpy.run_path(comfyui_dir / "main.py", run_name="__main__")
 ```
+
+> **Note:** `runpy.run_path(..., run_name="__main__")` is required because
+> ComfyUI's server startup lives inside `if __name__ == "__main__":`.  Using
+> `importlib.util.exec_module` silently skips that block.
 
 ### `install()` call graph
 
@@ -177,8 +207,12 @@ install()
   ├── torch_compat.patch_fp8_dtypes()      # inject dummy fp8 dtype attrs
   ├── torch_compat.patch_torch_compile()   # replace with identity
   ├── torch_compat.patch_sdpa()            # force math-only backend
-  ├── attention_compat.patch_attention()   # replace optimized_attention
-  └── torch_compat.patch_autocast()        # force fp16 instead of bf16
+  ├── torch_compat.patch_autocast()        # force fp16 instead of bf16
+  ├── torch_compat.patch_misc()            # uint16/32/64 dtype aliases
+  ├── torch_compat.patch_serialization()   # add_safe_globals shim (2.4 API → 2.0)
+  ├── torch_compat.patch_rmsnorm()         # backfill torch.nn.RMSNorm (missing in 2.0)
+  ├── attention_compat.register_import_hook()  # patch attention on first import
+  └── aiohttp_compat.patch_aiohttp_host()  # fix host:port in URL.build()
 ```
 
 ---

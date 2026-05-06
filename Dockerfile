@@ -135,6 +135,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# ComfyUI-Manager — node installation UI (bundled by default)
+# Installed as a pip package; enabled with --enable-manager flag at runtime.
+# ---------------------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -U --pre comfyui-manager
+
+# ---------------------------------------------------------------------------
 # Force numpy<2 — open-clip-torch / other packages may upgrade it past 1.x.
 # torch 2.0.1 was compiled against NumPy 1.x and will warn/crash with 2.x.
 # ---------------------------------------------------------------------------
@@ -191,4 +198,5 @@ CMD ["python", "/app/main_compat.py", \
      "--port", "8188", \
      "--base-directory", "/app/ComfyUI", \
      "--output-directory", "/app/output", \
-     "--input-directory", "/app/input"]
+     "--input-directory", "/app/input", \
+     "--enable-manager"]
