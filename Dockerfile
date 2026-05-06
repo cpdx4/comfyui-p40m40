@@ -43,12 +43,31 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # This is the newest PyTorch that supports Pascal (sm_61) and Maxwell (sm_52)
 # under CUDA 11.8 with full FP16 compute support.
 # ---------------------------------------------------------------------------
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install \
-    torch==2.0.1+cu118 \
-    torchvision==0.15.2+cu118 \
-    torchaudio==2.0.2+cu118 \
-    --index-url https://download.pytorch.org/whl/cu118
+RUN --mount=type=cache,id=pytorch-wheelhouse,target=/opt/wheelhouse,sharing=locked \
+        --mount=type=cache,id=pip-cache,target=/root/.cache/pip,sharing=locked \
+        bash -lc '
+            set -euo pipefail
+            TORCH_WHL="/opt/wheelhouse/torch-2.0.1+cu118-cp310-cp310-linux_x86_64.whl"
+            TV_WHL="/opt/wheelhouse/torchvision-0.15.2+cu118-cp310-cp310-linux_x86_64.whl"
+            TA_WHL="/opt/wheelhouse/torchaudio-2.0.2+cu118-cp310-cp310-linux_x86_64.whl"
+
+            if [ ! -f "$TORCH_WHL" ] || [ ! -f "$TV_WHL" ] || [ ! -f "$TA_WHL" ]; then
+                echo "[build] PyTorch wheelhouse cache miss: downloading wheels once"
+                pip download \
+                    --dest /opt/wheelhouse \
+                    --index-url https://download.pytorch.org/whl/cu118 \
+                    torch==2.0.1+cu118 \
+                    torchvision==0.15.2+cu118 \
+                    torchaudio==2.0.2+cu118
+            else
+                echo "[build] PyTorch wheelhouse cache hit: installing local wheels"
+            fi
+
+            pip install --no-index --find-links=/opt/wheelhouse \
+                torch==2.0.1+cu118 \
+                torchvision==0.15.2+cu118 \
+                torchaudio==2.0.2+cu118
+        '
 
 # ---------------------------------------------------------------------------
 # Core ComfyUI dependencies (pinned for reproducibility)
