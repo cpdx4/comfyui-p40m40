@@ -121,6 +121,16 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     imageio-ffmpeg==0.4.9
 
 # ---------------------------------------------------------------------------
+# OpenGL for GLSL shader nodes (nodes_glsl.py requires glfw + PyOpenGL)
+# ---------------------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
+    glfw==2.7.0 \
+    PyOpenGL==3.1.7 \
+    PyOpenGL-accelerate==3.1.7 \
+    || echo "PyOpenGL install failed — GLSL nodes unavailable"
+
+# ---------------------------------------------------------------------------
 # Optional: bitsandbytes for INT8 quantization (partial sm_61 support)
 # ---------------------------------------------------------------------------
 RUN --mount=type=cache,target=/root/.cache/pip \
