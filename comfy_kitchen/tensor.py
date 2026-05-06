@@ -15,6 +15,15 @@ logger = logging.getLogger("comfyui_compat.comfy_kitchen")
 logger.debug("comfy_kitchen.tensor stub loaded — FP8/FP4 ops are unavailable on sm<89.")
 
 
+class QuantizedTensor:
+    """Placeholder type for imports from newer comfy_kitchen builds."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        raise NotImplementedError(
+            "comfy_kitchen.tensor.QuantizedTensor is unavailable on Pascal/Maxwell (sm<89)."
+        )
+
+
 def _unavailable(name: str):
     def _raise(*args: Any, **kwargs: Any):
         raise NotImplementedError(
@@ -37,3 +46,10 @@ dequantize_fp4   = _unavailable("dequantize_fp4")
 fp8_gemm         = _unavailable("fp8_gemm")
 fp4_gemm         = _unavailable("fp4_gemm")
 quantize_weight  = _unavailable("quantize_weight")
+
+
+def __getattr__(name: str) -> Any:
+    """Return placeholder callables for any newly imported symbols."""
+    if name == "QuantizedTensor":
+        return QuantizedTensor
+    return _unavailable(name)

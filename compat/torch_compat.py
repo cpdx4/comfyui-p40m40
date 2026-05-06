@@ -243,6 +243,7 @@ def patch_autocast() -> None:
 def patch_misc() -> None:
     """Patch miscellaneous missing attrs added in PyTorch 2.1."""
     _patch_scaled_dot_product_attention_scale()
+    _patch_missing_unsigned_dtypes()
 
 
 def _patch_scaled_dot_product_attention_scale() -> None:
@@ -297,6 +298,26 @@ def _patch_scaled_dot_product_attention_scale() -> None:
 
     F.scaled_dot_product_attention = _safe_sdpa  # type: ignore[attr-defined]
     logger.debug("F.scaled_dot_product_attention wrapped for 2.0/2.1 compat.")
+
+
+def _patch_missing_unsigned_dtypes() -> None:
+    """Shim torch unsigned dtypes that are not exposed in torch 2.0.x."""
+    aliases = {
+        "uint16": torch.int16,
+        "uint32": torch.int32,
+        "uint64": torch.int64,
+    }
+    installed = []
+    for name, target in aliases.items():
+        if not hasattr(torch, name):
+            setattr(torch, name, target)
+            installed.append(name)
+
+    if installed:
+        logger.warning(
+            "Installed torch dtype aliases for missing unsigned types on torch 2.0: %s",
+            ", ".join(installed),
+        )
 
 
 # ---------------------------------------------------------------------------

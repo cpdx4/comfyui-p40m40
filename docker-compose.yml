@@ -48,7 +48,6 @@ services:
       - ./main_compat.py:/app/main_compat.py
 
     environment:
-      - CUDA_VISIBLE_DEVICES=all
       - PYTORCH_NO_CUDA_MEMORY_CACHING=0
       - COMFYUI_FORCE_FP16=1
       - TORCH_CUDA_ARCH_LIST=6.1;6.0;5.2
