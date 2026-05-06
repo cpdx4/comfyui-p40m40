@@ -45,29 +45,25 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ---------------------------------------------------------------------------
 RUN --mount=type=cache,id=pytorch-wheelhouse,target=/opt/wheelhouse,sharing=locked \
         --mount=type=cache,id=pip-cache,target=/root/.cache/pip,sharing=locked \
-        bash -lc '
-            set -euo pipefail
-            TORCH_WHL="/opt/wheelhouse/torch-2.0.1+cu118-cp310-cp310-linux_x86_64.whl"
-            TV_WHL="/opt/wheelhouse/torchvision-0.15.2+cu118-cp310-cp310-linux_x86_64.whl"
-            TA_WHL="/opt/wheelhouse/torchaudio-2.0.2+cu118-cp310-cp310-linux_x86_64.whl"
-
-            if [ ! -f "$TORCH_WHL" ] || [ ! -f "$TV_WHL" ] || [ ! -f "$TA_WHL" ]; then
-                echo "[build] PyTorch wheelhouse cache miss: downloading wheels once"
-                pip download \
+        bash -lc 'set -euo pipefail; \
+            TORCH_WHL="/opt/wheelhouse/torch-2.0.1+cu118-cp310-cp310-linux_x86_64.whl"; \
+            TV_WHL="/opt/wheelhouse/torchvision-0.15.2+cu118-cp310-cp310-linux_x86_64.whl"; \
+            TA_WHL="/opt/wheelhouse/torchaudio-2.0.2+cu118-cp310-cp310-linux_x86_64.whl"; \
+            if [ ! -f "$TORCH_WHL" ] || [ ! -f "$TV_WHL" ] || [ ! -f "$TA_WHL" ]; then \
+                echo "[build] PyTorch wheelhouse cache miss: downloading wheels once"; \
+                pip download --no-deps \
                     --dest /opt/wheelhouse \
                     --index-url https://download.pytorch.org/whl/cu118 \
                     torch==2.0.1+cu118 \
                     torchvision==0.15.2+cu118 \
-                    torchaudio==2.0.2+cu118
-            else
-                echo "[build] PyTorch wheelhouse cache hit: installing local wheels"
-            fi
-
-            pip install --no-index --find-links=/opt/wheelhouse \
+                    torchaudio==2.0.2+cu118; \
+            else \
+                echo "[build] PyTorch wheelhouse cache hit: installing local wheels"; \
+            fi; \
+            pip install --no-index --no-deps --find-links=/opt/wheelhouse \
                 torch==2.0.1+cu118 \
                 torchvision==0.15.2+cu118 \
-                torchaudio==2.0.2+cu118
-        '
+                torchaudio==2.0.2+cu118'
 
 # ---------------------------------------------------------------------------
 # Core ComfyUI dependencies (pinned for reproducibility)
@@ -169,7 +165,7 @@ RUN mkdir -p ${COMFYUI_DIR} /app/models /app/output /app/input
 # ---------------------------------------------------------------------------
 # GPU environment variables
 # ---------------------------------------------------------------------------
-ENV CUDA_VISIBLE_DEVICES=all
+ENV NVIDIA_VISIBLE_DEVICES=all
 # Disable CUDA graph capture (unstable on Pascal under CUDA 11.8)
 ENV PYTORCH_NO_CUDA_MEMORY_CACHING=0
 # Force FP16 for memory efficiency
@@ -183,7 +179,7 @@ ENV TRITON_CACHE_DIR=/tmp/triton_cache
 # Health check
 # ---------------------------------------------------------------------------
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8188/ || exit 1
+    CMD curl -sf -H "Host: comfyui" http://127.0.0.1:8188/system_stats || exit 1
 
 EXPOSE 8188
 

@@ -246,23 +246,10 @@ def main() -> None:
     os.chdir(comfyui_dir)
 
     # ---------------------------------------------------------------------------
-    # 7. Run ComfyUI's main module
+    # 7. Run ComfyUI's main module as __main__ so its startup block executes
     # ---------------------------------------------------------------------------
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "comfyui_main", comfyui_dir / "main.py"
-    )
-    if spec is None or spec.loader is None:
-        print(
-            f"ERROR: Could not load ComfyUI main.py from {comfyui_dir}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["__comfyui_main__"] = mod
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    import runpy
+    runpy.run_path(str(comfyui_dir / "main.py"), run_name="__main__")
 
 
 if __name__ == "__main__":

@@ -47,3 +47,13 @@ def set_log_warning() -> None:
 
 def set_log_info() -> None:
     logger.setLevel(logging.INFO)
+
+
+def analyze() -> None:
+    # DynamicVRAM analysis is disabled in this compatibility fork.
+    return None
+
+
+def get_total_vram_usage() -> int:
+    # Report 0 additional usage from aimdo since it is disabled.
+    return 0

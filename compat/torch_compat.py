@@ -353,6 +353,65 @@ def patch_serialization() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 7. torch.nn.RMSNorm backfill (added in PyTorch 2.1, missing in 2.0)
+# ---------------------------------------------------------------------------
+
+def patch_rmsnorm() -> None:
+    """Inject a pure-Python RMSNorm into torch.nn if missing (PyTorch < 2.1)."""
+    if hasattr(torch.nn, "RMSNorm"):
+        return
+
+    class RMSNorm(torch.nn.Module):
+        """Minimal RMSNorm compatible with the ComfyUI ops.py usage."""
+
+        def __init__(self, normalized_shape, eps: float = 1e-5,
+                     elementwise_affine: bool = True, device=None, dtype=None) -> None:
+            super().__init__()
+            if isinstance(normalized_shape, int):
+                normalized_shape = (normalized_shape,)
+            self.normalized_shape = tuple(normalized_shape)
+            self.eps = eps
+            self.elementwise_affine = elementwise_affine
+            if elementwise_affine:
+                self.weight = torch.nn.Parameter(
+                    torch.ones(self.normalized_shape, device=device, dtype=dtype)
+                )
+            else:
+                self.register_parameter("weight", None)
+            self.bias: Optional[torch.nn.Parameter] = None  # ComfyUI expects this attr
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            # rms_norm not available in PyTorch < 2.1, implement manually
+            orig_dtype = x.dtype
+            x = x.float()
+            norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+            norm = norm.to(orig_dtype)
+            if self.weight is not None:
+                norm = norm * self.weight
+            return norm
+
+        def extra_repr(self) -> str:
+            return f"{self.normalized_shape}, eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+
+    torch.nn.RMSNorm = RMSNorm  # type: ignore[attr-defined]
+    logger.info("Installed torch.nn.RMSNorm backfill (PyTorch 2.0 compat).")
+
+    # Also backfill torch.nn.functional.rms_norm if missing
+    if not hasattr(torch.nn.functional, "rms_norm"):
+        def _rms_norm(input: torch.Tensor, normalized_shape, weight=None,
+                      eps: float = 1e-5) -> torch.Tensor:
+            orig_dtype = input.dtype
+            x = input.float()
+            norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
+            norm = norm.to(orig_dtype)
+            if weight is not None:
+                norm = norm * weight
+            return norm
+        torch.nn.functional.rms_norm = _rms_norm  # type: ignore[attr-defined]
+        logger.info("Installed torch.nn.functional.rms_norm backfill (PyTorch 2.0 compat).")
+
+
+# ---------------------------------------------------------------------------
 # Master entry point
 # ---------------------------------------------------------------------------
 
@@ -364,3 +423,4 @@ def apply_all() -> None:
     patch_autocast()
     patch_misc()
     patch_serialization()
+    patch_rmsnorm()
