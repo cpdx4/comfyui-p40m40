@@ -120,6 +120,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Force numpy<2 — open-clip-torch / other packages may upgrade it past 1.x.
+# torch 2.0.1 was compiled against NumPy 1.x and will warn/crash with 2.x.
+# ---------------------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install "numpy==1.26.4"
+
+# ---------------------------------------------------------------------------
 # Application setup
 # ---------------------------------------------------------------------------
 WORKDIR /app
@@ -128,6 +135,7 @@ WORKDIR /app
 COPY compat/ /app/compat/
 COPY patches/ /app/patches/
 COPY comfy_aimdo/ /app/comfy_aimdo/
+COPY comfy_kitchen/ /app/comfy_kitchen/
 COPY scripts/ /app/scripts/
 
 # Copy the entry point

@@ -42,6 +42,7 @@ services:
       # Live-reload compat layer during development
       - ./compat:/app/compat
       - ./comfy_aimdo:/app/comfy_aimdo
+      - ./comfy_kitchen:/app/comfy_kitchen
       - ./patches:/app/patches
       - ./scripts:/app/scripts
       - ./main_compat.py:/app/main_compat.py

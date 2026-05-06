@@ -300,6 +300,38 @@ def _patch_scaled_dot_product_attention_scale() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 6. torch.serialization shims (PyTorch 2.4 API on 2.0)
+# ---------------------------------------------------------------------------
+#
+# PyTorch 2.4 added add_safe_globals / get_safe_globals / clear_safe_globals
+# to torch.serialization for use with weights_only=True loading.
+# ComfyUI's comfy/utils.py calls add_safe_globals at import time; without a
+# shim this raises AttributeError and crashes the whole process.
+
+def patch_serialization() -> None:
+    """Install torch.serialization shims for APIs added in PyTorch 2.4."""
+    import torch.serialization as _ser
+
+    if not hasattr(_ser, "add_safe_globals"):
+        _safe_globals_registry: list = []
+
+        def add_safe_globals(cls_list: list) -> None:
+            """No-op shim: torch 2.0 doesn't use the safe-globals mechanism."""
+            _safe_globals_registry.extend(cls_list)
+
+        def get_safe_globals() -> list:
+            return list(_safe_globals_registry)
+
+        def clear_safe_globals() -> None:
+            _safe_globals_registry.clear()
+
+        _ser.add_safe_globals = add_safe_globals  # type: ignore[attr-defined]
+        _ser.get_safe_globals = get_safe_globals  # type: ignore[attr-defined]
+        _ser.clear_safe_globals = clear_safe_globals  # type: ignore[attr-defined]
+        logger.debug("Installed torch.serialization.add_safe_globals shim (2.4 API on 2.0).")
+
+
+# ---------------------------------------------------------------------------
 # Master entry point
 # ---------------------------------------------------------------------------
 
@@ -310,3 +342,4 @@ def apply_all() -> None:
     patch_sdpa()
     patch_autocast()
     patch_misc()
+    patch_serialization()
