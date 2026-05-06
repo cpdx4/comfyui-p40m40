@@ -412,6 +412,36 @@ def patch_rmsnorm() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 8. Module.load_state_dict `assign` kwarg (added in PyTorch 2.1)
+# ---------------------------------------------------------------------------
+#
+# ComfyUI calls:
+#   model.load_state_dict(sd, strict=False, assign=self.patcher.is_dynamic())
+#
+# PyTorch 2.0 does not accept `assign`; this raises TypeError at runtime
+# whenever a VAE, checkpoint, or CLIP model is loaded.
+# Fix: wrap load_state_dict to silently drop `assign` on torch < 2.1.
+
+def patch_load_state_dict() -> None:
+    """Wrap Module.load_state_dict to ignore `assign` kwarg on PyTorch < 2.1."""
+    import torch.nn as nn
+
+    # torch 2.1 accepts assign natively — nothing to do
+    torch_version = tuple(int(x) for x in torch.__version__.split(".")[:2] if x.isdigit())
+    if torch_version >= (2, 1):
+        return
+
+    _orig_lsd = nn.Module.load_state_dict
+
+    def _load_state_dict_compat(self, state_dict, strict=True, assign=False, **kwargs):  # type: ignore[override]
+        # `assign` was added in 2.1 — drop it silently on 2.0
+        return _orig_lsd(self, state_dict, strict=strict, **kwargs)
+
+    nn.Module.load_state_dict = _load_state_dict_compat  # type: ignore[method-assign]
+    logger.info("Wrapped Module.load_state_dict to drop `assign` kwarg (PyTorch 2.0 compat).")
+
+
+# ---------------------------------------------------------------------------
 # Master entry point
 # ---------------------------------------------------------------------------
 
@@ -424,3 +454,4 @@ def apply_all() -> None:
     patch_misc()
     patch_serialization()
     patch_rmsnorm()
+    patch_load_state_dict()
