@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -104,21 +106,42 @@ def _ensure_comfyui_source(comfyui_dir: Path) -> Path:
             file=sys.stderr,
         )
         try:
-            if any(comfyui_dir.iterdir()):
-                # Non-empty but invalid checkout; keep files and only fail with guidance.
-                raise RuntimeError(
-                    f"Directory {comfyui_dir} exists but does not contain main.py"
+            if is_empty:
+                subprocess.check_call(
+                    [
+                        "git",
+                        "clone",
+                        "--depth",
+                        "1",
+                        UPSTREAM_COMFYUI_URL,
+                        str(comfyui_dir),
+                    ]
                 )
-            subprocess.check_call(
-                [
-                    "git",
-                    "clone",
-                    "--depth",
-                    "1",
-                    UPSTREAM_COMFYUI_URL,
-                    str(comfyui_dir),
-                ]
-            )
+            else:
+                # Docker bind mounts may pre-create the target folder or leave partial
+                # contents behind. Clone to a temp directory, then seed the target.
+                with tempfile.TemporaryDirectory(prefix="comfyui-bootstrap-") as temp_dir:
+                    temp_path = Path(temp_dir) / "ComfyUI"
+                    subprocess.check_call(
+                        [
+                            "git",
+                            "clone",
+                            "--depth",
+                            "1",
+                            UPSTREAM_COMFYUI_URL,
+                            str(temp_path),
+                        ]
+                    )
+                    for child in temp_path.iterdir():
+                        destination = comfyui_dir / child.name
+                        if destination.exists():
+                            if destination.is_dir() and child.is_dir():
+                                shutil.copytree(child, destination, dirs_exist_ok=True)
+                            continue
+                        if child.is_dir():
+                            shutil.copytree(child, destination)
+                        else:
+                            shutil.copy2(child, destination)
         except Exception as exc:
             print(
                 "ERROR: Failed to bootstrap ComfyUI source.\n"
