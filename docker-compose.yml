@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  comfyui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: comfyui-p40m40:latest
+    container_name: comfyui-p40m40
+
+    # GPU passthrough — passes ALL available GPUs.
+    # To use only GPU 0:  device_ids: ["0"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    ports:
+      - "8188:8188"
+
+    volumes:
+      # ComfyUI source (submodule)
+      - ./ComfyUI:/app/ComfyUI
+
+      # Persist models across container rebuilds
+      - ./models:/app/models
+      - ./ComfyUI/models:/app/ComfyUI/models
+
+      # Outputs and inputs
+      - ./output:/app/output
+      - ./input:/app/input
+
+      # Custom nodes persist
+      - ./ComfyUI/custom_nodes:/app/ComfyUI/custom_nodes
+
+      # Live-reload compat layer during development
+      - ./compat:/app/compat
+      - ./patches:/app/patches
+      - ./main_compat.py:/app/main_compat.py
+
+    environment:
+      - CUDA_VISIBLE_DEVICES=all
+      - PYTORCH_NO_CUDA_MEMORY_CACHING=0
+      - COMFYUI_FORCE_FP16=1
+      - TORCH_CUDA_ARCH_LIST=6.1;6.0;5.2
+      - PYTHONUNBUFFERED=1
+
+    # Restart unless explicitly stopped
+    restart: unless-stopped
+
+    # Allow sufficient shared memory for large model loading
+    shm_size: "4gb"
+
+    # Increase ulimits for large models
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

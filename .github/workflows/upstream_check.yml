@@ -1,0 +1,155 @@
+name: Upstream Compatibility Check
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no commits)"
+        required: false
+        default: "true"
+        type: boolean
+
+jobs:
+  check-upstream:
+    name: Check for new upstream ComfyUI commits
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install lightweight deps for triage script
+        run: |
+          pip install --quiet gitpython
+
+      - name: Configure git
+        run: |
+          git config --global user.name "upstream-bot"
+          git config --global user.email "upstream-bot@users.noreply.github.com"
+
+      - name: Add upstream remote in submodule
+        working-directory: ComfyUI
+        run: |
+          git remote add upstream https://github.com/comfyanonymous/ComfyUI.git || true
+          git fetch upstream master --depth=50
+
+      - name: Triage new upstream commits
+        id: triage
+        run: |
+          python scripts/triage_upstream.py \
+            --output triage_report.md \
+            --json triage_report.json
+
+      - name: Upload triage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-triage-${{ github.run_number }}
+          path: |
+            triage_report.md
+            triage_report.json
+
+      - name: Create summary comment
+        if: always()
+        run: |
+          if [ -f triage_report.md ]; then
+            cat triage_report.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Open issue if incompatible commits found
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('triage_report.json')) return;
+
+            const report = JSON.parse(fs.readFileSync('triage_report.json'));
+            const skipped = report.filter(c => c.category === 'SKIP');
+            const patches = report.filter(c => c.category === 'PATCH');
+            const total_new = report.length;
+
+            if (total_new === 0) {
+              console.log('No new commits — nothing to report.');
+              return;
+            }
+
+            const body = [
+              `## Upstream ComfyUI — Weekly Compatibility Report`,
+              ``,
+              `**${total_new}** new commits found upstream.`,
+              ``,
+              `| Category | Count |`,
+              `|----------|-------|`,
+              `| ✅ Auto-accept | ${report.filter(c=>c.category==='AUTO_ACCEPT').length} |`,
+              `| 🔧 Needs patch | ${patches.length} |`,
+              `| ⛔ Skipped (incompatible) | ${skipped.length} |`,
+              ``,
+              skipped.length > 0 ? [
+                `### ⛔ Skipped (FP8 / Triton / CUDA12)`,
+                skipped.map(c => `- \`${c.hash}\` ${c.subject}`).join('\n'),
+              ].join('\n') : '',
+              patches.length > 0 ? [
+                `### 🔧 Requires Patching`,
+                patches.map(c => `- \`${c.hash}\` ${c.subject}`).join('\n'),
+              ].join('\n') : '',
+              ``,
+              `Run \`./scripts/upstream_merge.sh\` to apply compatible commits.`,
+            ].filter(Boolean).join('\n');
+
+            if (skipped.length > 0 || patches.length > 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Upstream update: ${skipped.length} incompatible, ${patches.length} need patch`,
+                body,
+                labels: ['upstream', 'compatibility'],
+              });
+            }
+
+  validate-patches:
+    name: Validate patch scripts still apply cleanly
+    runs-on: ubuntu-latest
+    needs: check-upstream
+    if: always()
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install minimal deps
+        run: pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run patch check
+        run: python patches/apply_all.py --check
+
+      - name: Run syntax validation on compat modules
+        run: |
+          python -m py_compile compat/__init__.py
+          python -m py_compile compat/gpu_compat.py
+          python -m py_compile compat/torch_compat.py
+          python -m py_compile compat/attention_compat.py
+          python -m py_compile compat/fp8_stub.py
+          python -m py_compile main_compat.py
+          echo "All compat modules pass syntax check."

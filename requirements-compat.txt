@@ -1,0 +1,62 @@
+# ComfyUI P40/M40 Compatibility Fork — Python Dependencies
+#
+# Install with:  pip install -r requirements-compat.txt
+#
+# PyTorch MUST be installed separately before this file:
+#   pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 \
+#       --index-url https://download.pytorch.org/whl/cu118
+#
+# DO NOT add xformers, triton, or flash-attn — they require sm_70+
+
+# ---------------------------------------------------------------------------
+# Core ComfyUI dependencies
+# (pinned for reproducibility; update carefully)
+# ---------------------------------------------------------------------------
+accelerate==0.21.0
+aiohttp==3.9.3
+einops==0.7.0
+huggingface-hub==0.20.3
+kornia==0.7.0
+Pillow==10.2.0
+psutil==5.9.8
+PyYAML==6.0.1
+safetensors==0.4.2
+scipy==1.12.0
+spandrel==0.3.4
+tokenizers==0.15.1
+tqdm==4.66.1
+transformers==4.37.2
+
+# ---------------------------------------------------------------------------
+# Diffusion model loading
+# ---------------------------------------------------------------------------
+# diffusers 0.25.x is the last release compatible with PyTorch 2.0.1 and
+# without mandatory BF16 / torch.compile requirements.
+diffusers==0.25.1
+invisible-watermark==0.2.0
+open-clip-torch==2.24.0
+
+# ---------------------------------------------------------------------------
+# Image / video processing
+# ---------------------------------------------------------------------------
+opencv-python-headless==4.9.0.80
+imageio==2.33.1
+imageio-ffmpeg==0.4.9
+
+# ---------------------------------------------------------------------------
+# Optional: quantization (partial support on sm_61)
+# ---------------------------------------------------------------------------
+# bitsandbytes==0.41.3   # uncomment if INT8 needed; may fail on M40 (sm_52)
+
+# ---------------------------------------------------------------------------
+# Networking / server
+# ---------------------------------------------------------------------------
+websockets==12.0
+
+# ---------------------------------------------------------------------------
+# NOT included (incompatible with P40/M40):
+# ---------------------------------------------------------------------------
+# xformers     — requires sm_70+ (Volta) for memory-efficient attention
+# triton       — requires sm_70+ for Triton 2.x JIT compilation
+# flash-attn   — requires sm_80+ (Ampere) for Flash Attention 2
+# bitsandbytes >= 0.42  — requires newer CUDA for some quantization ops
