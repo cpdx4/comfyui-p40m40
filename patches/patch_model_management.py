@@ -63,6 +63,7 @@ def apply() -> None:
     src = _patch_bf16_unet_dtype(src)
     src = _patch_torch_compile(src)
     src = _patch_sdpa_selection(src)
+    src = _patch_tensor_nbytes(src)
     src = _add_sentinel(src)
 
     t.write_text(src, encoding="utf-8")
@@ -222,6 +223,19 @@ def _patch_sdpa_selection(src: str) -> str:
     src = re.sub(
         r'\benable_mem_efficient\s*=\s*True\b',
         'enable_mem_efficient=False  # [P40-COMPAT]',
+        src,
+    )
+    return src
+
+
+def _patch_tensor_nbytes(src: str) -> str:
+    """
+    Replace `t.nbytes` with `t.nelement() * t.element_size()`.
+    Tensor.nbytes was added in PyTorch 1.11 / is missing from some 2.0.x builds.
+    """
+    src = re.sub(
+        r'\b(\w+)\.nbytes\b',
+        r'\1.nelement() * \1.element_size()',
         src,
     )
     return src
