@@ -123,3 +123,67 @@ def resolve_dtype(dtype: Any, fallback: torch.dtype = torch.float16) -> torch.dt
         from compat.gpu_compat import downgrade_dtype
         return downgrade_dtype(dtype)
     return fallback
+
+
+# ---------------------------------------------------------------------------
+# FP8 → float16 dequantization (pure PyTorch, no native FP8 support needed)
+# ---------------------------------------------------------------------------
+
+def fp8_e4m3fn_to_float16(uint8_tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Dequantize a tensor of raw fp8_e4m3fn bytes (stored as uint8) to float16.
+
+    FP8 E4M3FN format (per OFP8 / IEEE draft):
+      bit 7   : sign
+      bits 6-3: exponent (4 bits), bias = 7
+      bits 2-0: mantissa (3 bits)
+      special : exp=0xF, mant!=0 → NaN  (no infinity)
+    """
+    x = uint8_tensor.to(torch.int32)
+    sign = (((x >> 7) & 1) * -2 + 1).to(torch.float32)   # +1 or -1
+    exp_bits = (x >> 3) & 0xF
+    mant_bits = (x & 0x7).to(torch.float32)
+
+    # Normal: val = sign * 2^(exp-7) * (1 + mant/8)
+    norm_val = sign * torch.pow(2.0, (exp_bits - 7).to(torch.float32)) * (1.0 + mant_bits / 8.0)
+    # Subnormal (exp==0): val = sign * 2^(-6) * (mant/8)
+    sub_val = sign * (2.0 ** -6) * (mant_bits / 8.0)
+    # NaN
+    nan_val = torch.full_like(norm_val, float("nan"))
+
+    result = torch.where(exp_bits == 0, sub_val, norm_val)
+    result = torch.where((exp_bits == 15) & (x & 0x7 != 0), nan_val, result)
+    return result.to(torch.float16)
+
+
+def fp8_e5m2_to_float16(uint8_tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Dequantize a tensor of raw fp8_e5m2 bytes (stored as uint8) to float16.
+
+    FP8 E5M2 format:
+      bit 7   : sign
+      bits 6-2: exponent (5 bits), bias = 15
+      bits 1-0: mantissa (2 bits)
+      special : exp=0x1F, mant=01/10/11 → NaN; exp=0x1F, mant=00 → ±Inf
+    """
+    x = uint8_tensor.to(torch.int32)
+    sign = (((x >> 7) & 1) * -2 + 1).to(torch.float32)
+    exp_bits = (x >> 2) & 0x1F
+    mant_bits = (x & 0x3).to(torch.float32)
+
+    norm_val = sign * torch.pow(2.0, (exp_bits - 15).to(torch.float32)) * (1.0 + mant_bits / 4.0)
+    sub_val = sign * (2.0 ** -14) * (mant_bits / 4.0)
+    inf_val = sign * torch.full_like(norm_val, float("inf"))
+    nan_val = torch.full_like(norm_val, float("nan"))
+
+    result = torch.where(exp_bits == 0, sub_val, norm_val)
+    result = torch.where((exp_bits == 31) & (x & 0x3 == 0), inf_val, result)
+    result = torch.where((exp_bits == 31) & (x & 0x3 != 0), nan_val, result)
+    return result.to(torch.float16)
+
+
+# Map safetensors dtype string → dequant function
+FP8_DEQUANT = {
+    "F8_E4M3": fp8_e4m3fn_to_float16,
+    "F8_E5M2": fp8_e5m2_to_float16,
+}

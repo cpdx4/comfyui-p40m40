@@ -42,6 +42,7 @@ PATCH_MODULES = [
     "patches.patch_ops",
     "patches.patch_attention",
     "patches.patch_nodes",
+    "patches.patch_utils",
 ]
 
 

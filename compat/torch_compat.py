@@ -481,6 +481,55 @@ def patch_torch_compiler() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 10. safetensors FP8 dtype remapping (PyTorch 2.0 has no real FP8 dtypes)
+# ---------------------------------------------------------------------------
+#
+# safetensors captures `torch.float8_e4m3fn` at import time via:
+#   _float8_e4m3fn = getattr(torch, "float8_e4m3fn", None)
+# Since our compat layer already ran, it gets our _FP8DtypeStub (a Python
+# object). When loading an FP8 .safetensors file, safetensors calls
+#   raw_bytes.view(dtype=_float8_e4m3fn)
+# which raises TypeError because view() requires a real C-level torch.dtype.
+#
+# Fix: replace stub entries in safetensors' dtype lookup tables with
+# torch.uint8 (same 1-byte size as FP8). FP8 bytes are preserved correctly.
+# Downstream load_torch_file() (patched in patch_utils.py) then dequantizes
+# the uint8 bytes to float16 using a proper bit-level LUT.
+
+def patch_safetensors_fp8() -> None:
+    """Remap FP8 stub dtypes in safetensors to torch.uint8 so view() works."""
+    try:
+        import safetensors.torch as _st
+    except ImportError:
+        logger.debug("safetensors not installed — skipping FP8 dtype remap.")
+        return
+
+    from compat.fp8_stub import is_fp8_stub
+
+    patched = []
+    for key in list(_st._TYPES.keys()):
+        if is_fp8_stub(_st._TYPES[key]):
+            _st._TYPES[key] = torch.uint8
+            patched.append(key)
+
+    # Also fix module-level cached variables
+    for attr in ("_float8_e4m3fn", "_float8_e5m2"):
+        if hasattr(_st, attr) and is_fp8_stub(getattr(_st, attr)):
+            setattr(_st, attr, torch.uint8)
+
+    # Fix _SIZE dict (keyed by dtype object, used for serialisation)
+    if hasattr(_st, "_SIZE"):
+        for k in list(_st._SIZE.keys()):
+            if is_fp8_stub(k):
+                _st._SIZE[torch.uint8] = _st._SIZE.pop(k)
+
+    if patched:
+        logger.info("Remapped safetensors FP8 dtypes → torch.uint8: %s", patched)
+    else:
+        logger.debug("safetensors FP8 dtype remap: nothing to patch.")
+
+
+# ---------------------------------------------------------------------------
 # Master entry point
 # ---------------------------------------------------------------------------
 
@@ -495,3 +544,4 @@ def apply_all() -> None:
     patch_rmsnorm()
     patch_load_state_dict()
     patch_torch_compiler()
+    patch_safetensors_fp8()
