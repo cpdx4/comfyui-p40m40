@@ -442,6 +442,45 @@ def patch_load_state_dict() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 9. torch.compiler shim (added in PyTorch 2.1)
+# ---------------------------------------------------------------------------
+#
+# ComfyUI/comfy/ops.py calls `torch.compiler.is_compiling()` at runtime.
+# torch.compiler does not exist in PyTorch 2.0.x, causing AttributeError.
+# On 2.0 with torch.compile replaced by a no-op, is_compiling() is always False.
+
+def patch_torch_compiler() -> None:
+    """Install a torch.compiler stub module for PyTorch < 2.1."""
+    if hasattr(torch, "compiler"):
+        return
+
+    import types
+    compiler_mod = types.ModuleType("torch.compiler")
+
+    def is_compiling() -> bool:
+        return False
+
+    def disable(fn=None, *args, **kwargs):
+        if fn is None:
+            return lambda f: f
+        return fn
+
+    def allow_in_graph(fn=None, *args, **kwargs):
+        if fn is None:
+            return lambda f: f
+        return fn
+
+    compiler_mod.is_compiling = is_compiling  # type: ignore[attr-defined]
+    compiler_mod.disable = disable  # type: ignore[attr-defined]
+    compiler_mod.allow_in_graph = allow_in_graph  # type: ignore[attr-defined]
+
+    torch.compiler = compiler_mod  # type: ignore[attr-defined]
+    import sys
+    sys.modules["torch.compiler"] = compiler_mod
+    logger.info("Installed torch.compiler stub (PyTorch 2.0 compat).")
+
+
+# ---------------------------------------------------------------------------
 # Master entry point
 # ---------------------------------------------------------------------------
 
@@ -455,3 +494,4 @@ def apply_all() -> None:
     patch_serialization()
     patch_rmsnorm()
     patch_load_state_dict()
+    patch_torch_compiler()
