@@ -31,7 +31,7 @@ logger = logging.getLogger("patches")
 
 PATCH_ID = "utils_fp8_dequant"
 TARGET_FILE = "comfy/utils.py"
-_SENTINEL = "# [P40-COMPAT] utils fp8 patched v2"
+_SENTINEL = "# [P40-COMPAT] utils fp8 patched v3"
 
 
 def _target() -> Path:
@@ -80,12 +80,13 @@ def apply() -> None:
 # ---------------------------------------------------------------------------
 
 def _remove_old_patch(src: str) -> str:
-    old_sentinel = "# [P40-COMPAT] utils fp8 patched\n"
+    for old_sentinel in [
+        "# [P40-COMPAT] utils fp8 patched\n",
+        "# [P40-COMPAT] utils fp8 patched v2\n",
+    ]:
+        src = src.replace(old_sentinel, "")
+
     old_helper_start = "\n# [P40-COMPAT] injected by patches/patch_utils.py\n"
-
-    # Remove old sentinel
-    src = src.replace(old_sentinel, "")
-
     # Remove old helper block (from the marker to the blank line before load_torch_file)
     if old_helper_start in src:
         start = src.find(old_helper_start)
@@ -151,24 +152,55 @@ def _p40_dequant_fp8_tensor(tensor, dtype_str: str):
 
 def _p40_load_fp8_safetensors(ckpt: str, device) -> dict:
     """
-    Load a safetensors file that contains FP8 tensors using the pure Python
-    path (safetensors.torch.load), which goes through _view2torch/_TYPES
-    rather than the Rust safe_open extension.
+    Load a safetensors file that contains FP8 tensors by:
+      1. Using safe_open normally for all non-FP8 tensors (fast path).
+      2. For FP8 tensors: reading raw bytes directly from the file using the
+         data_offsets from the safetensors header, then dequantizing to float16.
 
-    Since _TYPES["F8_E4M3"] is patched to torch.uint8 at startup, FP8 tensors
-    are returned as uint8 tensors with raw bit patterns intact.  We then apply
-    proper bit-level dequantization to float16.
+    This completely bypasses safetensors' Rust dtype handling for FP8 tensors,
+    which fails on PyTorch 2.0 because the Rust extension calls view(dtype=stub).
     """
-    import safetensors.torch as _p40_st
+    import safetensors
+
     _p40_fp8_dtypes = _p40_read_safetensors_fp8_dtypes(ckpt)
+
+    # Parse full header for data_offsets of FP8 tensors
     with open(ckpt, "rb") as _p40_f:
-        _p40_raw = _p40_f.read()
-    _p40_sd = _p40_st.load(_p40_raw)
+        _p40_hsz = _p40_struct.unpack("<Q", _p40_f.read(8))[0]
+        _p40_hdr = _p40_json.loads(_p40_f.read(_p40_hsz))
+        # data section starts right after the 8-byte length prefix + header JSON
+        _p40_data_start = 8 + _p40_hsz
+        _p40_raw = _p40_f.read()  # rest of file = tensor data section
+
+    _p40_sd = {}
+
+    # Load non-FP8 tensors via safe_open (Rust fast path)
+    with safetensors.safe_open(ckpt, framework="pt", device=str(device)) as _p40_sf:
+        for _p40_k in _p40_sf.keys():
+            if _p40_k not in _p40_fp8_dtypes:
+                _p40_sd[_p40_k] = _p40_sf.get_tensor(_p40_k)
+
+    # Load FP8 tensors manually from raw bytes
     for _p40_k, _p40_dstr in _p40_fp8_dtypes.items():
-        if _p40_k in _p40_sd and _p40_sd[_p40_k].dtype == torch.uint8:
-            _p40_sd[_p40_k] = _p40_dequant_fp8_tensor(_p40_sd[_p40_k], _p40_dstr)
-    if str(device) != "cpu":
-        _p40_sd = {k: v.to(device) for k, v in _p40_sd.items()}
+        _p40_info = _p40_hdr.get(_p40_k, {})
+        _p40_shape = _p40_info.get("shape", [])
+        _p40_offsets = _p40_info.get("data_offsets", [0, 0])
+        _p40_start = _p40_offsets[0]
+        _p40_end = _p40_offsets[1]
+        _p40_nbytes = _p40_end - _p40_start
+
+        if _p40_nbytes == 0:
+            _p40_sd[_p40_k] = torch.zeros(_p40_shape, dtype=torch.float16)
+            continue
+
+        _p40_bytes = bytearray(_p40_raw[_p40_start:_p40_end])
+        _p40_u8 = torch.frombuffer(_p40_bytes, dtype=torch.uint8)
+        if _p40_shape:
+            _p40_u8 = _p40_u8.reshape(_p40_shape)
+        _p40_sd[_p40_k] = _p40_dequant_fp8_tensor(_p40_u8, _p40_dstr)
+        if str(device) != "cpu":
+            _p40_sd[_p40_k] = _p40_sd[_p40_k].to(device)
+
     return _p40_sd
 
 '''
