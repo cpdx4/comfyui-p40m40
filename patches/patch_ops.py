@@ -22,7 +22,7 @@ logger = logging.getLogger("patches")
 
 PATCH_ID = "ops_fp8_removal"
 TARGET_FILE = "comfy/ops.py"
-_SENTINEL = "# [P40-COMPAT] ops patched"
+_SENTINEL = "# [P40-COMPAT] ops patched v2"
 
 
 def _target() -> Path:
@@ -50,6 +50,8 @@ def apply() -> None:
         raise FileNotFoundError(f"Target not found: {t}")
 
     src = t.read_text(encoding="utf-8")
+    # Strip old v1 sentinel so we can re-apply with new v2 patches
+    src = src.replace("\n# [P40-COMPAT] ops patched\n", "\n")
     if _SENTINEL in src:
         return
 
@@ -58,6 +60,7 @@ def apply() -> None:
     src = _patch_fp8_manual_cast(src)
     src = _patch_fp8_isinstance_checks(src)
     src = _patch_torch_compile(src)
+    src = _patch_layout_cls_none_fallback(src)
     src += f"\n{_SENTINEL}\n"
 
     t.write_text(src, encoding="utf-8")
@@ -167,3 +170,48 @@ def _patch_torch_compile(src: str) -> str:
         src,
     )
     return src
+
+
+def _patch_layout_cls_none_fallback(src: str) -> str:
+    """
+    When comfy_kitchen is unavailable, get_layout_class() returns None and
+    calling None.Params(...) raises AttributeError.  Insert an early-return
+    fallback right after the layout_cls assignment: when layout_cls is None
+    we pop the scale params and store the (already-dequantized) weight as a
+    plain float16 nn.Parameter, then return from _load_from_state_dict.
+    """
+    old = (
+        "                    layout_cls = get_layout_class(self.layout_type)\n"
+        "\n"
+        "                    # Load format-specific parameters\n"
+    )
+    new = (
+        "                    layout_cls = get_layout_class(self.layout_type)\n"
+        "\n"
+        "                    if layout_cls is None:  # [P40-COMPAT] comfy_kitchen unavailable\n"
+        "                        logging.warning(\n"
+        "                            '[P40-COMPAT] No layout class for %s at %s, loading as float16',\n"
+        "                            self.quant_format, layer_name)\n"
+        "                        for _p40_pn in qconfig['parameters']:\n"
+        "                            _p40_pk = f'{prefix}{_p40_pn}'\n"
+        "                            if _p40_pk in state_dict:\n"
+        "                                manually_loaded_keys.append(_p40_pk)\n"
+        "                                state_dict.pop(_p40_pk)\n"
+        "                        self.weight = torch.nn.Parameter(\n"
+        "                            weight.to(device=device, dtype=MixedPrecisionOps._compute_dtype),\n"
+        "                            requires_grad=False,\n"
+        "                        )\n"
+        "                        super()._load_from_state_dict(\n"
+        "                            state_dict, prefix, local_metadata, strict,\n"
+        "                            missing_keys, unexpected_keys, error_msgs)\n"
+        "                        for _p40_key in manually_loaded_keys:\n"
+        "                            if _p40_key in missing_keys:\n"
+        "                                missing_keys.remove(_p40_key)\n"
+        "                        return\n"
+        "\n"
+        "                    # Load format-specific parameters\n"
+    )
+    if old not in src:
+        logging.warning("_patch_layout_cls_none_fallback: target string not found, skipping")
+        return src
+    return src.replace(old, new, 1)
