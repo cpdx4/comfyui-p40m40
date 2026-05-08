@@ -39,6 +39,7 @@ STATE_FILE = Path(__file__).resolve().parent / ".patch_state.json"
 # Ordered list of patch modules (applied in this order)
 PATCH_MODULES = [
     "patches.patch_model_management",
+    "patches.patch_model_patcher",
     "patches.patch_ops",
     "patches.patch_attention",
     "patches.patch_nodes",
