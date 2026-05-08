@@ -30,14 +30,14 @@ services:
 
       # Persist models across container rebuilds
       - ./models:/app/models
-      - ./ComfyUI/models:/app/ComfyUI/models
+      - ${HOST_MODELS_PATH:-./ComfyUI/models}:/app/ComfyUI/models:rw
 
       # Outputs and inputs
-      - ./output:/app/output
-      - ./input:/app/input
+      - ${HOST_OUTPUT_PATH:-./output}:/app/output:rw
+      - ${HOST_INPUT_PATH:-./input}:/app/input:rw
 
       # Custom nodes persist
-      - ./ComfyUI/custom_nodes:/app/ComfyUI/custom_nodes
+      - ${HOST_CUSTOM_NODES_PATH:-./ComfyUI/custom_nodes}:/app/ComfyUI/custom_nodes:rw
 
       # Live-reload compat layer during development
       - ./compat:/app/compat
