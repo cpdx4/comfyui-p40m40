@@ -53,6 +53,23 @@ services:
       - TORCH_CUDA_ARCH_LIST=6.1;6.0;5.2
       - PYTHONUNBUFFERED=1
 
+    command:
+      - python
+      - /app/main_compat.py
+      - --listen
+      - 0.0.0.0
+      - --port
+      - "8188"
+      - --base-directory
+      - /app/ComfyUI
+      - --output-directory
+      - /app/output
+      - --input-directory
+      - /app/input
+      - --enable-manager
+      - --gpu-only
+      - --disable-smart-memory
+
     # Restart unless explicitly stopped
     restart: unless-stopped
 
