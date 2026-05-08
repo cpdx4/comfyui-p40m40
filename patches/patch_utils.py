@@ -31,7 +31,7 @@ logger = logging.getLogger("patches")
 
 PATCH_ID = "utils_fp8_dequant"
 TARGET_FILE = "comfy/utils.py"
-_SENTINEL = "# [P40-COMPAT] utils fp8 patched v6"
+_SENTINEL = "# [P40-COMPAT] utils fp8 patched v7"
 
 
 def _target() -> Path:
@@ -86,6 +86,7 @@ def _remove_old_patch(src: str) -> str:
         "# [P40-COMPAT] utils fp8 patched v3\n",
         "# [P40-COMPAT] utils fp8 patched v4\n",
         "# [P40-COMPAT] utils fp8 patched v5\n",
+        "# [P40-COMPAT] utils fp8 patched v6\n",
     ]:
         src = src.replace(old_sentinel, "")
 
@@ -162,9 +163,37 @@ def _p40_should_reject_fp8(ckpt: str, has_fp8: bool) -> bool:
     if _policy in {"all", "reject", "true", "1"}:
         return True
 
+    def _has_non_fp8_alternative(path: str) -> bool:
+        """
+        Heuristic: if a same-family bf16/fp16 file exists in the same folder,
+        FP8 conversion usually provides little benefit on P40/M40 and can be skipped.
+        """
+        try:
+            _d = _p40_os.path.dirname(path)
+            _bn = _p40_os.path.basename(path)
+            _name, _ext = _p40_os.path.splitext(_bn)
+            _name_l = _name.lower()
+            # Remove common fp8 tokens for loose family matching
+            for _tok in ["_fp8_scaled", "_fp8_e4m3fn", "_fp8_e5m2", "_fp8", "-fp8"]:
+                _name_l = _name_l.replace(_tok, "")
+            _alts = [f for f in _p40_os.listdir(_d) if f.lower().endswith(_ext.lower())]
+            for _f in _alts:
+                _fl = _f.lower()
+                _root = _fl.rsplit('.', 1)[0]
+                if _name_l and _name_l in _root and any(t in _root for t in ["bf16", "fp16", "float16"]):
+                    return True
+            return False
+        except Exception:
+            return False
+
     _ckpt_l = ckpt.lower()
-    if _policy in {"text", "text_encoder", "text_encoders", "auto", "default"}:
+    if _policy in {"text", "text_encoder", "text_encoders"}:
         return "/text_encoders/" in _ckpt_l or "text_encoder" in _ckpt_l
+
+    if _policy in {"auto", "default"}:
+        if "/text_encoders/" in _ckpt_l or "text_encoder" in _ckpt_l:
+            return _has_non_fp8_alternative(ckpt)
+        return False
 
     # Unknown policy -> safe default
     return "/text_encoders/" in _ckpt_l or "text_encoder" in _ckpt_l
