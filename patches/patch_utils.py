@@ -31,7 +31,7 @@ logger = logging.getLogger("patches")
 
 PATCH_ID = "utils_fp8_dequant"
 TARGET_FILE = "comfy/utils.py"
-_SENTINEL = "# [P40-COMPAT] utils fp8 patched v5"
+_SENTINEL = "# [P40-COMPAT] utils fp8 patched v6"
 
 
 def _target() -> Path:
@@ -85,6 +85,7 @@ def _remove_old_patch(src: str) -> str:
         "# [P40-COMPAT] utils fp8 patched v2\n",
         "# [P40-COMPAT] utils fp8 patched v3\n",
         "# [P40-COMPAT] utils fp8 patched v4\n",
+        "# [P40-COMPAT] utils fp8 patched v5\n",
     ]:
         src = src.replace(old_sentinel, "")
 
@@ -136,6 +137,39 @@ def _p40_env_float(name: str, default: float) -> float:
         return default
 
 
+def _p40_should_reject_fp8(ckpt: str, has_fp8: bool) -> bool:
+    """
+    Selective FP8 reject policy for P40/M40.
+
+    Policy source: P40_FP8_POLICY (default: "auto")
+      - off / allow : never reject FP8
+      - all / reject : reject all FP8 checkpoints
+      - text / text_encoders : reject only FP8 text encoders
+      - auto : same as text_encoders (good default on P40/M40)
+
+    Backward compatibility: if P40_REJECT_FP8=1, behaves as "all".
+    """
+    if not has_fp8:
+        return False
+
+    # Legacy env keeps existing behavior if explicitly set.
+    if _p40_env_true("P40_REJECT_FP8", default=False):
+        return True
+
+    _policy = _p40_os.environ.get("P40_FP8_POLICY", "auto").strip().lower()
+    if _policy in {"off", "allow", "false", "0"}:
+        return False
+    if _policy in {"all", "reject", "true", "1"}:
+        return True
+
+    _ckpt_l = ckpt.lower()
+    if _policy in {"text", "text_encoder", "text_encoders", "auto", "default"}:
+        return "/text_encoders/" in _ckpt_l or "text_encoder" in _ckpt_l
+
+    # Unknown policy -> safe default
+    return "/text_encoders/" in _ckpt_l or "text_encoder" in _ckpt_l
+
+
 def _p40_read_safetensors_fp8_dtypes(ckpt: str) -> dict:
     """
     Read the safetensors file header and return {tensor_name: dtype_str}
@@ -183,10 +217,11 @@ def _p40_load_fp8_safetensors(ckpt: str, device) -> dict:
     import safetensors
 
     _p40_fp8_dtypes = _p40_read_safetensors_fp8_dtypes(ckpt)
-    if _p40_fp8_dtypes and _p40_env_true("P40_REJECT_FP8", default=False):
+    if _p40_should_reject_fp8(ckpt, bool(_p40_fp8_dtypes)):
         raise RuntimeError(
-            "[P40-COMPAT] Refusing FP8 checkpoint because P40_REJECT_FP8=1. "
-            "Use a bf16/fp16 text encoder or unset P40_REJECT_FP8 to allow slow FP8->FP16 conversion."
+            "[P40-COMPAT] Refusing FP8 checkpoint by policy for this path. "
+            "Set P40_FP8_POLICY=off to allow slow FP8->FP16 conversion, "
+            "or use a non-FP8 checkpoint for best behavior on P40/M40."
         )
 
     # Parse full header for data_offsets of FP8 tensors

@@ -52,7 +52,7 @@ services:
       - COMFYUI_FORCE_FP16=1
       - TORCH_CUDA_ARCH_LIST=6.1;6.0;5.2
       - PYTHONUNBUFFERED=1
-      - P40_REJECT_FP8=1
+      - P40_FP8_POLICY=auto
       - P40_MAX_SAFETENSORS_GB=32
 
     command:
