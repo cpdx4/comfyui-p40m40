@@ -31,7 +31,7 @@ logger = logging.getLogger("patches")
 
 PATCH_ID = "utils_fp8_dequant"
 TARGET_FILE = "comfy/utils.py"
-_SENTINEL = "# [P40-COMPAT] utils fp8 patched v3"
+_SENTINEL = "# [P40-COMPAT] utils fp8 patched v5"
 
 
 def _target() -> Path:
@@ -83,6 +83,8 @@ def _remove_old_patch(src: str) -> str:
     for old_sentinel in [
         "# [P40-COMPAT] utils fp8 patched\n",
         "# [P40-COMPAT] utils fp8 patched v2\n",
+        "# [P40-COMPAT] utils fp8 patched v3\n",
+        "# [P40-COMPAT] utils fp8 patched v4\n",
     ]:
         src = src.replace(old_sentinel, "")
 
@@ -113,7 +115,25 @@ def _remove_old_patch(src: str) -> str:
 _HELPER = '''
 # [P40-COMPAT] injected by patches/patch_utils.py
 import json as _p40_json
+import os as _p40_os
 import struct as _p40_struct
+
+
+def _p40_env_true(name: str, default: bool = False) -> bool:
+    _v = _p40_os.environ.get(name)
+    if _v is None:
+        return default
+    return str(_v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _p40_env_float(name: str, default: float) -> float:
+    _v = _p40_os.environ.get(name)
+    if _v is None:
+        return default
+    try:
+        return float(_v)
+    except Exception:
+        return default
 
 
 def _p40_read_safetensors_fp8_dtypes(ckpt: str) -> dict:
@@ -163,6 +183,11 @@ def _p40_load_fp8_safetensors(ckpt: str, device) -> dict:
     import safetensors
 
     _p40_fp8_dtypes = _p40_read_safetensors_fp8_dtypes(ckpt)
+    if _p40_fp8_dtypes and _p40_env_true("P40_REJECT_FP8", default=False):
+        raise RuntimeError(
+            "[P40-COMPAT] Refusing FP8 checkpoint because P40_REJECT_FP8=1. "
+            "Use a bf16/fp16 text encoder or unset P40_REJECT_FP8 to allow slow FP8->FP16 conversion."
+        )
 
     # Parse full header for data_offsets of FP8 tensors
     with open(ckpt, "rb") as _p40_f:
@@ -219,6 +244,14 @@ _OLD_BLOCK = '''            else:
                         metadata = f.metadata()'''
 
 _NEW_BLOCK = '''            else:
+                _p40_max_gb = _p40_env_float("P40_MAX_SAFETENSORS_GB", 32.0)
+                _p40_size_gb = _p40_os.path.getsize(ckpt) / (1024.0 ** 3)
+                if _p40_size_gb > _p40_max_gb:
+                    raise RuntimeError(
+                        f"[P40-COMPAT] Refusing to open large safetensors ({_p40_size_gb:.2f} GiB): {ckpt}. "
+                        f"Limit is {_p40_max_gb} GiB via P40_MAX_SAFETENSORS_GB. "
+                        "This model will mmap huge CPU virtual memory and fail on this host; use a smaller FP8/FP16 model."
+                    )
                 if _p40_read_safetensors_fp8_dtypes(ckpt):
                     # FP8 file: safe_open Rust cannot view() our dtype stubs.
                     # Fall back to pure-Python safetensors.torch.load() path.
@@ -269,4 +302,57 @@ def _patch_load_torch_file(src: str) -> str:
         _NEW_BLOCK,
         src,
     )
+
+    # If a prior patch already replaced the safe_open block, the regex above
+    # may not match. In that case, inject the large-file guard into the current
+    # branch shape.
+    _existing = '''            else:
+                if _p40_read_safetensors_fp8_dtypes(ckpt):
+                    # FP8 file: safe_open Rust cannot view() our dtype stubs.
+                    # Fall back to pure-Python safetensors.torch.load() path.
+                    sd = _p40_load_fp8_safetensors(ckpt, device)
+                    if return_metadata:
+                        with safetensors.safe_open(ckpt, framework="pt", device=device.type) as _p40_mf:
+                            metadata = _p40_mf.metadata()
+                else:
+                    with safetensors.safe_open(ckpt, framework="pt", device=device.type) as f:
+                        sd = {}
+                        for k in f.keys():
+                            tensor = f.get_tensor(k)
+                            if DISABLE_MMAP:  # TODO: Not sure if this is the best way to bypass the mmap issues
+                                tensor = tensor.to(device=device, copy=True)
+                            sd[k] = tensor
+                        if return_metadata:
+                            metadata = f.metadata()'''
+
+    _existing_with_guard = '''            else:
+                _p40_max_gb = _p40_env_float("P40_MAX_SAFETENSORS_GB", 32.0)
+                _p40_size_gb = _p40_os.path.getsize(ckpt) / (1024.0 ** 3)
+                if _p40_size_gb > _p40_max_gb:
+                    raise RuntimeError(
+                        f"[P40-COMPAT] Refusing to open large safetensors ({_p40_size_gb:.2f} GiB): {ckpt}. "
+                        f"Limit is {_p40_max_gb} GiB via P40_MAX_SAFETENSORS_GB. "
+                        "This model will mmap huge CPU virtual memory and fail on this host; use a smaller FP8/FP16 model."
+                    )
+                if _p40_read_safetensors_fp8_dtypes(ckpt):
+                    # FP8 file: safe_open Rust cannot view() our dtype stubs.
+                    # Fall back to pure-Python safetensors.torch.load() path.
+                    sd = _p40_load_fp8_safetensors(ckpt, device)
+                    if return_metadata:
+                        with safetensors.safe_open(ckpt, framework="pt", device=device.type) as _p40_mf:
+                            metadata = _p40_mf.metadata()
+                else:
+                    with safetensors.safe_open(ckpt, framework="pt", device=device.type) as f:
+                        sd = {}
+                        for k in f.keys():
+                            tensor = f.get_tensor(k)
+                            if DISABLE_MMAP:  # TODO: Not sure if this is the best way to bypass the mmap issues
+                                tensor = tensor.to(device=device, copy=True)
+                            sd[k] = tensor
+                        if return_metadata:
+                            metadata = f.metadata()'''
+
+    if _existing in src:
+        src = src.replace(_existing, _existing_with_guard, 1)
+
     return src
