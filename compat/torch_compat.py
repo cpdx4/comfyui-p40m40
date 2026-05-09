@@ -9,11 +9,13 @@ Patches applied:
   3. SDPA forced to math-only backend (flash/mem-efficient unavailable on Pascal/Maxwell)
   4. torch.autocast BF16 guard (BF16 compute not available on Pascal/Maxwell)
   5. torch.nn.attention.sdpa_kernel back-compat shim (2.1 API → 2.0 API)
+    6. torch.nn.LayerNorm `bias` kwarg shim (2.1+ API on 2.0)
 """
 
 from __future__ import annotations
 
 import contextlib
+import inspect
 import logging
 import sys
 from typing import Any, Callable, Generator, Optional, TypeVar
@@ -412,6 +414,54 @@ def patch_rmsnorm() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 7b. torch.nn.LayerNorm `bias` kwarg shim (added in newer torch)
+# ---------------------------------------------------------------------------
+
+def patch_layernorm_bias_kwarg() -> None:
+    """Wrap LayerNorm.__init__ to ignore unsupported `bias` kwarg on torch 2.0."""
+    layernorm_init = torch.nn.LayerNorm.__init__
+
+    # Newer torch already supports bias kwarg; nothing to do.
+    try:
+        if "bias" in inspect.signature(layernorm_init).parameters:
+            return
+    except (TypeError, ValueError):
+        # If signature introspection fails, try runtime probing instead.
+        pass
+
+    # Probe directly to avoid double-wrapping if patch already applied.
+    try:
+        _ = torch.nn.LayerNorm(1, bias=False)
+        return
+    except TypeError:
+        pass
+
+    def _layernorm_init_compat(
+        self,
+        normalized_shape,
+        eps: float = 1e-5,
+        elementwise_affine: bool = True,
+        bias: bool = True,
+        device=None,
+        dtype=None,
+    ) -> None:
+        # PyTorch 2.0 has no `bias` arg; emulate by disabling affine when requested.
+        if not bias and elementwise_affine:
+            elementwise_affine = False
+        layernorm_init(
+            self,
+            normalized_shape,
+            eps=eps,
+            elementwise_affine=elementwise_affine,
+            device=device,
+            dtype=dtype,
+        )
+
+    torch.nn.LayerNorm.__init__ = _layernorm_init_compat  # type: ignore[assignment]
+    logger.info("Wrapped torch.nn.LayerNorm to accept `bias` kwarg (PyTorch 2.0 compat).")
+
+
+# ---------------------------------------------------------------------------
 # 8. Module.load_state_dict `assign` kwarg (added in PyTorch 2.1)
 # ---------------------------------------------------------------------------
 #
@@ -542,6 +592,7 @@ def apply_all() -> None:
     patch_misc()
     patch_serialization()
     patch_rmsnorm()
+    patch_layernorm_bias_kwarg()
     patch_load_state_dict()
     patch_torch_compiler()
     patch_safetensors_fp8()

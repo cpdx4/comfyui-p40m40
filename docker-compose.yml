@@ -70,7 +70,6 @@ services:
       - /app/input
       - --enable-manager
       - --gpu-only
-      - --disable-smart-memory
 
     # Restart unless explicitly stopped
     restart: unless-stopped

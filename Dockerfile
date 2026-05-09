@@ -80,6 +80,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     comfyui-workflow-templates==0.9.69 \
     einops==0.7.0 \
     filelock==3.16.1 \
+    gguf==0.10.0 \
     huggingface-hub==0.20.3 \
     kornia==0.7.0 \
     numpy==1.26.4 \
