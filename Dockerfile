@@ -152,6 +152,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -U --pre comfyui-manager
 
+# Manager/custom-node installs can upgrade transitive deps into unsupported ranges.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
+    huggingface-hub==0.20.3 \
+    transformers==4.37.2
+
 # ---------------------------------------------------------------------------
 # Force numpy<2 — open-clip-torch / other packages may upgrade it past 1.x.
 # torch 2.0.1 was compiled against NumPy 1.x and will warn/crash with 2.x.
@@ -174,6 +180,7 @@ COPY scripts/ /app/scripts/
 # Copy the entry point
 COPY main_compat.py /app/main_compat.py
 COPY requirements-compat.txt /app/requirements-compat.txt
+COPY constraints-runtime.txt /app/constraints-runtime.txt
 
 # Mount point for ComfyUI submodule / models / outputs
 # In production use docker compose volumes instead of COPY
@@ -190,6 +197,8 @@ ENV PYTORCH_NO_CUDA_MEMORY_CACHING=0
 ENV COMFYUI_FORCE_FP16=1
 # Prevent torch from probing unavailable CUDA capabilities
 ENV TORCH_CUDA_ARCH_LIST="6.1;6.0;5.2"
+# Ensure runtime pip installs inherit compatibility constraints.
+ENV PIP_CONSTRAINT=/app/constraints-runtime.txt
 # Disable Triton autotune cache (Triton is blocked anyway)
 ENV TRITON_CACHE_DIR=/tmp/triton_cache
 

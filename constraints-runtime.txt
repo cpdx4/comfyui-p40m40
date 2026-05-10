@@ -1,0 +1,4 @@
+# Runtime safety constraints for ad-hoc pip installs inside container.
+# Prevent custom node installers from upgrading core deps into incompatible ranges.
+huggingface-hub<1.0
+numpy<2

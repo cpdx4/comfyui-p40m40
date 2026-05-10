@@ -7,6 +7,7 @@ It reports environment readiness before ComfyUI is imported.
 
 from __future__ import annotations
 
+import importlib.metadata
 import shutil
 import subprocess
 import sys
@@ -82,6 +83,49 @@ def _check_comfyui_source(comfyui_dir: Path) -> Tuple[bool, str]:
     return True, f"ComfyUI source OK at {comfyui_dir}"
 
 
+def _ensure_dependency_compat() -> Tuple[bool, str]:
+    """
+    Keep critical deps in ranges compatible with torch 2.0.1 + transformers 4.37.
+    Some custom node installers can upgrade these and break startup.
+    """
+    actions: List[str] = []
+
+    def parse_major(ver: str) -> int:
+        try:
+            return int(ver.split(".", 1)[0])
+        except Exception:
+            return -1
+
+    def get_ver(pkg: str) -> str | None:
+        try:
+            return importlib.metadata.version(pkg)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+
+    def pip_install(spec: str) -> None:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--no-cache-dir", spec],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    hub_ver = get_ver("huggingface-hub")
+    if hub_ver is not None and parse_major(hub_ver) >= 1:
+        pip_install("huggingface-hub>=0.19.3,<1.0")
+        new_ver = get_ver("huggingface-hub")
+        actions.append(f"huggingface-hub {hub_ver} -> {new_ver}")
+
+    np_ver = get_ver("numpy")
+    if np_ver is not None and parse_major(np_ver) >= 2:
+        pip_install("numpy<2")
+        new_ver = get_ver("numpy")
+        actions.append(f"numpy {np_ver} -> {new_ver}")
+
+    if actions:
+        return True, "Adjusted incompatible deps: " + "; ".join(actions)
+    return True, "Dependency compatibility OK"
+
+
 def _check_patch_state() -> Tuple[bool, str]:
     try:
         from patches import apply_all
@@ -130,6 +174,9 @@ def run_preflight(comfyui_dir: Path) -> bool:
 
     patch_ok, patch_msg = _check_patch_state()
     _print("OK" if patch_ok else "WARN", patch_msg)
+
+    dep_ok, dep_msg = _ensure_dependency_compat()
+    _print("OK" if dep_ok else "WARN", dep_msg)
 
     if torch_ok and not cuda_ok:
         _print(

@@ -54,6 +54,7 @@ services:
       - PYTHONUNBUFFERED=1
       - P40_FP8_POLICY=auto
       - P40_MAX_SAFETENSORS_GB=32
+      - PIP_CONSTRAINT=/app/constraints-runtime.txt
 
     command:
       - python
